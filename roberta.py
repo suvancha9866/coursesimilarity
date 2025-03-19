@@ -5,7 +5,7 @@ class RoBERTa:
     def __init__(self, cd1: str, cd2: str):
         self.cd1 = cd1
         self.cd2 = cd2
-        self.model = SentenceTransformer('stsb-roberta-base', device='cpu')
+        self.model = SentenceTransformer('stsb-roberta-base')
 
     def similarity(self):
         sentences = [self.cd1, self.cd2]
