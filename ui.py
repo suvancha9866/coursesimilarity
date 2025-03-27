@@ -1,5 +1,6 @@
-from roberta import RoBERTa
-from sbert import SBERT
+from models.roberta import RoBERTa
+from models.sbert import SBERT
+from models.bestsbert import SBERTquality
 import numpy as np
 import pandas as pd
 import re
@@ -20,6 +21,7 @@ df["Description"] = df["Description"].str.split("Continuation of").str[0]
 df["Description"] = df["Description"].str.replace(r"\b\d+\s*(or\s*\d+)?\s*(to\s*\d+)?\s*(undergraduate|graduate|professional)\s*hours\b", "", regex=True)
 df = df[~df['Description'].str.match(r'^\s*$|^\.*$', na=True)]
 df = df.drop_duplicates(subset=["Description"])
+#df = df.head(10)
 
 options = df["Course"].tolist()
 similarity_dict = {}
@@ -28,22 +30,20 @@ def course(name, model):
         return similarity_dict[(name, model)]
     row = df[df["Course"] == name]
     file_content1 = row["Description"].iloc[0]
-    scores = []
-    #start_time = time.time()
-    for i in range(len(df)):
-        if df.iloc[i]["Course"] != name:
-            if model == "SBERT":
-                model1 = SBERT(file_content1, df.iloc[i]["Description"])
-            else:
-                model1 = RoBERTa(file_content1, df.iloc[i]["Description"])
-            scores.append([df.iloc[i]["Subject"], df.iloc[i]["Number"], model1.similarity()])
-    # timey = time.time() - start_time
-    # print("--- %s seconds ---" % (timey))
-    df_similarity = pd.DataFrame(scores, columns=["Subject", "Number", "Similarity"])
+    if model == "Best Performance SBERT": # 106
+        model1 = SBERT(file_content1, df["Description"])
+    elif model == "Best Quality SBERT": # 518
+        model1 = SBERTquality(file_content1, df["Description"])
+    else: # 250
+        model1 = RoBERTa(file_content1, df["Description"])
+    scores = model1.similarity()
+
+    df_similarity = pd.DataFrame({"Subject": df["Subject"].tolist(), "Number": df["Number"].tolist(), "Similarity": scores.tolist()[0]})
     df_similarity = df_similarity.sort_values(['Similarity'], ascending=False)
     df_similarity['Course Name'] = df_similarity['Subject'].astype(str) + " " + df_similarity['Number'].astype(str) 
     df_similarity["Similarity %"] = (df_similarity["Similarity"] * 100).round(2).astype(str) + "%"
-    df_similarity_new = df_similarity[["Course Name", "Similarity %"]].head()
+    df_similarity_new = df_similarity[df_similarity["Course Name"] != name]
+    df_similarity_new = df_similarity_new[["Course Name", "Similarity %"]].head(10)
     similarity_dict[(name, model)] = df_similarity_new
     return df_similarity_new
 
@@ -52,11 +52,12 @@ with gr.Blocks() as demo:
     with gr.Row():
         with gr.Column():
             dropdown = gr.Dropdown(choices=options, label="Choose a Course")
-            radio = gr.Radio(["SBERT", "RoBERTa"], label="Choose a Model")
+            radio = gr.Radio(["Best Quality SBERT", "Best Performance SBERT", "RoBERTa"], label="Choose a Model")
         with gr.Column():
             gr.Markdown('NOTE: Not all courses are listed.')
-            gr.Markdown('SBERT: Faster ~ 45 minutes, Less Accurate.')
-            gr.Markdown('RoBERTa: Slower ~ 85 minutes, More Accurate.')
+            gr.Markdown('Best Quality SBERT ~ 550 seconds')
+            gr.Markdown('Best Performance SBERT ~ 120 seconds')
+            gr.Markdown('RoBERTa ~ 250 seconds')
         button = gr.Button("Submit", variant="primary")
     output = gr.Dataframe(headers=["Course Name", "Similarity %"])
     gr.Markdown('Please ignore the processing time. Times may vary')
