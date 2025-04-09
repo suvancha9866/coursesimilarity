@@ -161,4 +161,4 @@ with gr.Blocks(theme = uiuc) as demo:
             outputs=[common_topic_output]
         )
 
-demo.launch()
+demo.launch(favicon_path='./favicon-96x96.png')
