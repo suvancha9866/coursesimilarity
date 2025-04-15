@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import re
 import gradio as gr
-from gemini_utils import get_common_topic
+from gemini_utils import get_common_topic, find_similar_courses_with_gemini
 from uiuc import UIUCTheme
 
 df = pd.read_csv("course-catalog.csv")
@@ -22,6 +22,7 @@ df["Description"] = df["Description"].str.replace(
     r"\b\d+\s*(or\s*\d+)?\s*(to\s*\d+)?\s*(undergraduate|graduate|professional)\s*hours\b", "", regex=True)
 df = df[~df['Description'].str.match(r'^\s*$|^\.*$', na=True)]
 df = df.drop_duplicates(subset=["Description"])
+#df = df.head()
 
 options = df["Course"].tolist()
 similarity_dict = {}
@@ -73,76 +74,97 @@ def get_common_topic_from_state(course_name, model_choice):
         return "No valid course descriptions found."
     return get_common_topic(descriptions, similar_course_names)
 
+def find_more_courses_based_on_topic(course_name, model_choice):
+    if not course_name or not model_choice:
+        return "Please select a course and model first."
+    
+    key = (course_name, model_choice)
+    if key not in similarity_dict:
+        return "Course similarity data not found. Run similarity search first."
+    
+    similar_courses_data = similarity_dict[key]
+    similar_course_names = list(similar_courses_data.keys())
+    descriptions = [df[df["Course"] == course_name]["Description"].iloc[0] for course_name in similar_course_names]
+
+    return find_similar_courses_with_gemini(descriptions, similar_course_names, df)
+
 uiuc = UIUCTheme()
 with gr.Blocks(theme = uiuc) as demo:
     gr.Markdown("# UIUC: Find a Similar Course")
 
     with gr.Tab("Project Description"):
         gr.Markdown("""
-                # 🎓 UIUC: Find a Similar Course
+            # 🎓 UIUC: Find a Similar Course
 
-                Welcome to **UIUC: Find a Similar Course**, developed by Suvan Chatakondu as part of the **Machine Learning & AI Internship** at **ATLAS**.
+            Created by **Suvan Chatakondu** as part of the **Machine Learning & AI Internship at ATLAS**.
 
-                Ever found a course that sounds interesting, but the **timing**, **availability**, or **prerequisites** don’t align? This tool helps you discover **similar courses** at **UIUC** based on course descriptions, so you can explore more options that fit your needs.
+            This application helps students at the **University of Illinois Urbana-Champaign (UIUC)** discover **alternative or similar courses** by analyzing and comparing course **descriptions** using advanced **Natural Language Processing (NLP)** techniques.
+                    
+            Dataset (Based on Spring 2025 Catalog) : https://waf.cs.illinois.edu/discovery/course-catalog.csv
 
-                ---
+            ---
 
-                ### 🔍 How to Use This Tool
+            ### 💡 Why Use This?
 
-                1. **Go to the “Find Course” tab** above.
-                2. **Choose a course** using the dropdown. Type the course code in this format: `DEPT ###` (e.g., `CS 225`).
-                    - *Note:* Not all courses are listed for performance optimization. Cross-listed courses are grouped under their primary department.
-                3. **Pick a model**:
-                    - 🏃‍♂️ **SBERT** — faster (about ~2 minutes)
-                    - 🧠 **RoBERTa** — more accurate, but slower (about ~4 minutes)
-                4. Once similar courses are displayed, you can click **"Get Common Topic"** to see the main theme or subject area shared by those similar courses.
+            Sometimes, the perfect course doesn't work out — due to scheduling conflicts, prerequisites, or enrollment caps. This app helps you:
 
-                ---
+            - **Find 5 most similar courses** to any course at UIUC
+            - **Understand shared topics** across courses using Google's **Gemini AI**
+            - **Discover additional recommendations** using AI reasoning beyond traditional similarity
 
-                ### ⚙️ How It Works
+            ---
 
-                This tool leverages **Natural Language Processing (NLP)** models to analyze and compare course descriptions, identifying other courses that share similar content. The two models used are:
+            ### ⚙️ How It Works
 
-                - **SBERT** and **RoBERTa**: Two cutting-edge NLP models that process course descriptions to determine how closely courses are related. 
-                - Both models rank other courses based on similarity, displaying the top matches in a neat table.
+            The system uses two NLP models to compare course descriptions:
 
-                **SBERT** is faster (2 minutes) but less resource-intensive.  
-                **RoBERTa** is more accurate, though it takes a bit longer (4 minutes).
+            - 🏃‍♂️ **SBERT** (Faster): Good for quick comparisons (~2 mins)
+            - 🧠 **RoBERTa** (More accurate): Deeper contextual similarity (~4 mins)
 
-                ---
+            After selecting a course and model, the app outputs the top 5 most similar courses based on **textual similarity of descriptions**.
 
-                ### 🌐 Gemini Feature: Common Topic Generator
+            You can also:
 
-                After finding similar courses, the tool can go a step further using **Gemini API**, which analyzes the course descriptions and extracts the **common themes** shared by the most similar courses. This feature identifies the overarching **topics** or **concepts** that these courses explore, giving you a clearer understanding of the subject area.
+            - 🔮 **Ask Gemini**: Use Google's Gemini AI to extract the **common topic** shared by the top 5 results.
+            - 🔍 **Find More Courses**: Let Gemini suggest **additional relevant courses** beyond the top 5 using language understanding and reasoning.
 
-                - **What does Gemini do?**
-                    - It takes the descriptions of similar courses and identifies key patterns, common keywords, and shared topics.
-                    - It helps you understand the **big picture** — what all those courses are fundamentally about, which can guide you in making more informed course decisions.
-                
-                Example: If you're comparing courses related to **Machine Learning**, Gemini might identify that the common topics are **Neural Networks**, **Deep Learning**, **Supervised Learning**, etc.
+            ---
 
-                **Use Case**: After you find similar courses in the “Find Course” tab, you can click **“Get Common Topic”** to see what **all the similar courses** have in common, making it easier for you to decide if the subject area fits your interests.
+            ### 🚀 How to Use
 
-                ---
+            1. Go to the **“Find Courses”** tab.
+            2. Select a course from the dropdown (e.g., `CS 225`).
+            3. Pick a model: `SBERT` (fast) or `RoBERTa` (accurate).
+            4. Click **“Find Similar Courses”** to generate your recommendations.
+            5. Click **“Ask Gemini”** to see what they have in common.
+            6. Optionally, click **“Find Even More Courses”** to explore deeper AI-driven suggestions.
 
-                ### 📌 Notes
+            ---
 
-                - Processing times may vary depending on the model and dataset size — thanks for your patience!
-                - Feel free to explore different courses and models as many times as you'd like.
-                - Gemini functionality provides a higher-level understanding of course content by focusing on shared themes.
-        """)
+            ### 📌 Notes
 
-    with gr.Tab("Find Course"):
+            - Not all courses are listed
+                - Cross-listed courses are listed on the main department for the course
+            - Processing times may vary based on description length, model used, and other factors. Gradio will be wrong for it.
+            - Similarity is based solely on course **description text**, not credits, prerequisites, or schedules.
+            - **Gemini Limits**:
+                - 15 Requests per Minute
+                - 1,500 Requests per Day
+
+            ---
+
+            Try it out and discover a whole new set of courses that might be a perfect fit! 🎯
+            """)
+    with gr.Tab("Find Courses"):
         gr.Markdown("## 🧾 Discover Similar Courses")
         with gr.Row():
             with gr.Column():
                 dropdown = gr.Dropdown(choices=options, label="Choose a Course")
                 radio = gr.Radio(["SBERT", "RoBERTa"], label="Choose a Model")
             with gr.Column():
-                gr.Markdown('NOTE: Not all courses are listed and Times May Vary')
                 gr.Markdown('SBERT(Faster) ~ 200 seconds')
                 gr.Markdown('RoBERTa(More accurate) ~ 350 seconds')
-        find_button = gr.Button("Find Similar Courses", variant="secondary")
+        find_button = gr.Button("Find Similar Courses", variant="primary")
         output_similarity = gr.Dataframe(headers=["Course Name", "Similarity %"])
         similar_course_names_output = gr.State([])
         find_button.click(
@@ -160,5 +182,18 @@ with gr.Blocks(theme = uiuc) as demo:
             inputs=[dropdown, radio],
             outputs=[common_topic_output]
         )
+        gr.Markdown("---" \
+        "")
+        gr.Markdown("## 🔍 Find Even More Courses")
+        find_more_courses_button = gr.Button("Find Even More Courses with Gemini")
+        more_courses_output = gr.Textbox(label="Similar Courses:")
 
-demo.launch(favicon_path='./favicon-96x96.png')
+        find_more_courses_button.click(
+            fn=find_more_courses_based_on_topic,
+            inputs=[dropdown, radio],
+            outputs=[more_courses_output]
+        )
+
+demo.title = "UIUC: Find a Similar Course"
+demo.launch(favicon_path='uiuc.png')
+
