@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import re
 import gradio as gr
-from gemini_utils import get_common_topic, find_similar_courses_with_gemini
+from gemini_utils import get_common_topic
 from uiuc import UIUCTheme
 
 df = pd.read_csv("course-catalog.csv")
@@ -29,7 +29,7 @@ similarity_dict = {}
 def course(name, model):
     if (name, model) in similarity_dict:
         similar_courses_data = similarity_dict[(name, model)]
-        df_similarity = pd.DataFrame(list(similar_courses_data.items()), columns=["Course Name", "Similarity %"])
+        df_similarity = pd.DataFrame(list(similar_courses_data.items()), columns=["Course Name", "Similarity %", "Description"])
         return df_similarity, list(similar_courses_data.keys())
     row = df[df["Course"] == name]
     file_content1 = row["Description"].iloc[0]
@@ -38,22 +38,88 @@ def course(name, model):
     elif model == "RoBERTa":
         model1 = RoBERTa(file_content1, df["Description"])
     else:
-        df_similarity = pd.DataFrame({"Course Name": [name], "Similarity %": ["Pick a Model"]})
+        df_similarity = pd.DataFrame({"Course Name": [name], "Similarity %": ["Pick a Model"], "Description": ["N/A"],})
         return df_similarity, []
     scores = model1.similarity()
     df_similarity = pd.DataFrame({
         "Subject": df["Subject"].tolist(),
         "Number": df["Number"].tolist(),
-        "Similarity": scores.tolist()[0]
+        "Similarity": scores.tolist()[0],
+        "Description": df["Description"].tolist()
     })
     df_similarity = df_similarity.sort_values(['Similarity'], ascending=False)
     df_similarity['Course Name'] = df_similarity['Subject'].astype(str) + " " + df_similarity['Number'].astype(str)
     df_similarity["Similarity %"] = (df_similarity["Similarity"] * 100).round(2).astype(str) + "%"
     df_similarity_new = df_similarity[df_similarity["Course Name"] != name]
-    df_similarity_new = df_similarity_new[["Course Name", "Similarity %"]].head(5)
+    df_similarity_new = df_similarity_new[["Course Name", "Similarity %", "Description"]].head(5)
     df_dict = df_similarity_new.set_index("Course Name")["Similarity %"].to_dict()
     similarity_dict[(name, model)] = df_dict
     return df_similarity_new, list(df_dict.keys())
+
+def course2(name, model):
+    if (name, model) in similarity_dict:
+        similar_courses_data = similarity_dict[(name, model)]
+        df_similarity = pd.DataFrame(list(similar_courses_data.items()), columns=["Course Name", "Similarity %", "Description"])
+        return df_similarity, list(similar_courses_data.keys())
+    if model == "SBERT":
+        model1 = SBERT(name, df["Description"])
+    elif model == "RoBERTa":
+        model1 = RoBERTa(name, df["Description"])
+    else:
+        df_similarity = pd.DataFrame({"Course Name": [name], "Similarity %": ["Pick a Model"], "Description": ["N/A"],})
+        return df_similarity, []
+    scores = model1.similarity()
+    df_similarity = pd.DataFrame({
+        "Subject": df["Subject"].tolist(),
+        "Number": df["Number"].tolist(),
+        "Similarity": scores.tolist()[0],
+        "Description": df["Description"].tolist()
+    })
+    df_similarity = df_similarity.sort_values(['Similarity'], ascending=False)
+    df_similarity['Course Name'] = df_similarity['Subject'].astype(str) + " " + df_similarity['Number'].astype(str)
+    df_similarity["Similarity %"] = (df_similarity["Similarity"] * 100).round(2).astype(str) + "%"
+    df_similarity_new = df_similarity[df_similarity["Course Name"] != name]
+    df_similarity_new = df_similarity_new[["Course Name", "Similarity %", "Description"]].head(5)
+    df_dict = df_similarity_new.set_index("Course Name")["Similarity %"].to_dict()
+    similarity_dict[(name, model)] = df_dict
+    return df_similarity_new, list(df_dict.keys())
+
+def morecourse(similar_course_names, firstname, model, common_topic_output):
+    descriptions = []
+    for course_name in similar_course_names:
+        try:
+            desc = df[df["Course"] == course_name]["Description"].iloc[0]
+            descriptions.append(desc)
+        except IndexError:
+            continue
+    descriptions.append(common_topic_output)
+    if not descriptions:
+        return pd.DataFrame({"Course Name": [], "Similarity %": [], "Description": []}), []
+    if model == "SBERT":
+        model1 = SBERT(descriptions, df["Description"])
+    elif model == "RoBERTa":
+        model1 = RoBERTa(descriptions, df["Description"])
+    else:
+        return pd.DataFrame({"Course Name": ["Invalid"], "Similarity %": ["Pick a Model"], "Description": ["N/A"]}), []
+    scores = model1.similarity()
+    df_similarity = pd.DataFrame({
+        "Subject": df["Subject"].tolist(),
+        "Number": df["Number"].tolist(),
+        "Similarity": scores.tolist()[0],
+        "Description": df["Description"].tolist()
+    })
+    df_similarity["Course Name"] = df_similarity["Subject"].astype(str) + " " + df_similarity["Number"].astype(str)
+    df_similarity["Similarity %"] = (df_similarity["Similarity"] * 100).round(2).astype(str) + "%"
+    df_similarity = df_similarity[~df_similarity["Course Name"].isin(similar_course_names + [firstname])]
+    df_similarity_new = df_similarity.sort_values("Similarity", ascending=False).head(5)
+    df_similarity_new = df_similarity_new[["Course Name", "Similarity %", "Description"]]
+    return df_similarity_new
+
+def get_course_description(course_code):
+    try:
+        return df[df["Course"] == course_code]["Description"].iloc[0]
+    except IndexError:
+        return "Description not found."
 
 def get_common_topic_from_state(course_name, model_choice):
     if not course_name or not model_choice:
@@ -74,98 +140,86 @@ def get_common_topic_from_state(course_name, model_choice):
         return "No valid course descriptions found."
     return get_common_topic(descriptions, similar_course_names)
 
-def find_more_courses_based_on_topic(course_name, model_choice):
-    if not course_name or not model_choice:
-        return "Please select a course and model first."
-    
-    key = (course_name, model_choice)
-    if key not in similarity_dict:
-        return "Course similarity data not found. Run similarity search first."
-    
-    similar_courses_data = similarity_dict[key]
-    similar_course_names = list(similar_courses_data.keys())
-    descriptions = [df[df["Course"] == course_name]["Description"].iloc[0] for course_name in similar_course_names]
-
-    return find_similar_courses_with_gemini(descriptions, similar_course_names, df)
-
 uiuc = UIUCTheme()
 with gr.Blocks(theme = uiuc) as demo:
     gr.Markdown("# UIUC: Find a Similar Course")
 
     with gr.Tab("Project Description"):
         gr.Markdown("""
-            # 🎓 UIUC: Find a Similar Course
-
-            Created by **Suvan Chatakondu** as part of the **Machine Learning & AI Internship at ATLAS**.
-
-            This application helps students at the **University of Illinois Urbana-Champaign (UIUC)** discover **alternative or similar courses** by analyzing and comparing course **descriptions** using advanced **Natural Language Processing (NLP)** techniques.
                     
-            Dataset (Based on Spring 2025 Catalog) : https://waf.cs.illinois.edu/discovery/course-catalog.csv
+                    # 🎓 UIUC: Find a Similar Course
 
-            ---
+                    Developed by **Suvan Chatakondu** as part of the **Machine Learning & Artificial Intelligence Internship at ATLAS**.
 
-            ### 💡 Why Use This?
+                    This application empowers students at the **University of Illinois Urbana-Champaign (UIUC)** to explore **alternative or related courses** by analyzing course descriptions through **cutting-edge Natural Language Processing (NLP)** models and **Google's Gemini AI**.
 
-            Sometimes, the perfect course doesn't work out — due to scheduling conflicts, prerequisites, or enrollment caps. This app helps you:
+                    Sometimes, your ideal course doesn’t fit your schedule, has prerequisites, or fills up too fast. This tool helps you:
 
-            - **Find 5 most similar courses** to any course at UIUC
-            - **Understand shared topics** across courses using Google's **Gemini AI**
-            - **Discover additional recommendations** using AI reasoning beyond traditional similarity
+                    - 🔎 **Find 5 similar courses** based on course content
+                    - 💬 **Use Gemini AI** to uncover shared themes across those courses
+                    - 🌐 **Discover even more courses** by combining topic analysis with semantic similarity
+                    - 🧠 Choose between **Course Number Dropdown** or **Keyword Input** to start your search
 
-            ---
+                    📚 Dataset: [Spring 2025 Course Catalog](https://waf.cs.illinois.edu/discovery/course-catalog.csv)
 
-            ### ⚙️ How It Works
+                    ---
 
-            The system uses two NLP models to compare course descriptions:
+                    ### 🚀 How to Use
 
-            - 🏃‍♂️ **SBERT** (Faster): Good for quick comparisons (~2 mins)
-            - 🧠 **RoBERTa** (More accurate): Deeper contextual similarity (~4 mins)
+                    1. Navigate to the **"Find Courses with Course Number"** tab to select a course, or the **"Find Courses with Keywords"** tab to search by topic.
+                    2. Choose your NLP model: `SBERT` (fast) or `RoBERTa` (more accurate).
+                    3. Click **"Find Similar Courses"** to generate your top 5 matches.
+                    4. Click **"Ask Gemini"** to identify the **common topic** among them.
+                    5. Click **"Discover Even More Courses"** to receive 5 additional recommendations based on both **topic** and **similarity**.
 
-            After selecting a course and model, the app outputs the top 5 most similar courses based on **textual similarity of descriptions**.
+                    ---
 
-            You can also:
+                    ### ⚙️ How It Works
 
-            - 🔮 **Ask Gemini**: Use Google's Gemini AI to extract the **common topic** shared by the top 5 results.
-            - 🔍 **Find More Courses**: Let Gemini suggest **additional relevant courses** beyond the top 5 using language understanding and reasoning.
+                    - 🏃‍♂️ **SBERT**: Delivers faster, lightweight comparisons (~2 mins)
+                    - 🧠 **RoBERTa**: Performs deeper contextual matching (~4 mins)
 
-            ---
+                    **Gemini Integration**:
+                    - Sends the top 5 course descriptions to Gemini
+                    - Receives a human-readable summary of the shared theme
+                    - Uses that theme + similarity to recommend even more courses
 
-            ### 🚀 How to Use
+                    ---
 
-            1. Go to the **“Find Courses”** tab.
-            2. Select a course from the dropdown (e.g., `CS 225`).
-            3. Pick a model: `SBERT` (fast) or `RoBERTa` (accurate).
-            4. Click **“Find Similar Courses”** to generate your recommendations.
-            5. Click **“Ask Gemini”** to see what they have in common.
-            6. Optionally, click **“Find Even More Courses”** to explore deeper AI-driven suggestions.
+                    ### 📌 Notes
 
-            ---
+                    - ⚠️ Gradio's displayed **processing time estimates** may not reflect actual runtime
+                    - Matching is based solely on **course descriptions** — not credits, prerequisites, or scheduling
+                    - Some cross-listed or special topic courses may be excluded
+                    - **Gemini API Limits**:
+                    - 15 requests/minute
+                    - 1,500 requests/day
 
-            ### 📌 Notes
+                    ---
 
-            - Not all courses are listed
-                - Cross-listed courses are listed on the main department for the course
-            - Processing times may vary based on description length, model used, and other factors. Gradio will be wrong for it.
-            - Similarity is based solely on course **description text**, not credits, prerequisites, or schedules.
-            - **Gemini Limits**:
-                - 15 Requests per Minute
-                - 1,500 Requests per Day
+                    🎯 Try it out and discover a whole new set of courses tailored to your academic and career goals!
 
-            ---
+                    ---
 
-            Try it out and discover a whole new set of courses that might be a perfect fit! 🎯
-            """)
-    with gr.Tab("Find Courses"):
-        gr.Markdown("## 🧾 Discover Similar Courses")
+                    *Project Description generated with ideas by ChatGPT*
+
+        """)
+    with gr.Tab("Find Courses with Course Number"):
+        gr.Markdown("## 🧾 Discover Similar Courses using Course Numbers")
         with gr.Row():
             with gr.Column():
                 dropdown = gr.Dropdown(choices=options, label="Choose a Course")
-                radio = gr.Radio(["SBERT", "RoBERTa"], label="Choose a Model")
             with gr.Column():
-                gr.Markdown('SBERT(Faster) ~ 200 seconds')
-                gr.Markdown('RoBERTa(More accurate) ~ 350 seconds')
+                radio = gr.Radio(["SBERT", "RoBERTa"], label="Choose a Model")
+        desc = gr.Textbox(label="Course Description", lines=3, interactive=False)
+        dropdown.change(
+            fn=get_course_description,
+            inputs=dropdown,
+            outputs=desc
+        )
         find_button = gr.Button("Find Similar Courses", variant="primary")
-        output_similarity = gr.Dataframe(headers=["Course Name", "Similarity %"])
+        with gr.Column(elem_classes="dataframe-wrap"):
+            output_similarity = gr.Dataframe(headers=["Course Name", "Similarity %", "Description"], wrap = True)
         similar_course_names_output = gr.State([])
         find_button.click(
             fn=course,
@@ -184,16 +238,51 @@ with gr.Blocks(theme = uiuc) as demo:
         )
         gr.Markdown("---" \
         "")
-        gr.Markdown("## 🔍 Find Even More Courses")
-        find_more_courses_button = gr.Button("Find Even More Courses with Gemini")
-        more_courses_output = gr.Textbox(label="Similar Courses:")
-
-        find_more_courses_button.click(
-            fn=find_more_courses_based_on_topic,
-            inputs=[dropdown, radio],
-            outputs=[more_courses_output]
+        gr.Markdown("## 🧠 Discover Even More Courses")
+        button2 = gr.Button("Discover", variant="primary")
+        output2 = gr.Dataframe(headers=["Course Name", "Similarity %", "Description"])
+        button2.click(
+            fn=morecourse,
+            inputs=[similar_course_names_output, dropdown, radio, common_topic_output],
+            outputs=output2
         )
+    with gr.Tab("Find Courses with Keywords"):
+        gr.Markdown("## 🧾 Discover Similar Courses using Keywords")
+        with gr.Row():
+            with gr.Column():
+                dropdown = gr.Textbox(label="Input Keywords to look for")
+            with gr.Column():
+                radio = gr.Radio(["SBERT", "RoBERTa"], label="Choose a Model")
+        find_button = gr.Button("Find Similar Courses", variant="primary")
+        with gr.Column(elem_classes="dataframe-wrap"):
+            output_similarity = gr.Dataframe(headers=["Course Name", "Similarity %", "Description"], wrap = True)
+        similar_course_names_output = gr.State([])
+        find_button.click(
+            fn=course2,
+            inputs=[dropdown, radio],
+            outputs=[output_similarity, similar_course_names_output],
+        )
+        gr.Markdown("---" \
+        "")
+        gr.Markdown("## 🔮 Common Topic Amongst Courses")
+        analyze_button = gr.Button("Ask Gemini", variant="primary")
+        common_topic_output = gr.Textbox(label="Topics:")
+        analyze_button.click(
+            fn=get_common_topic_from_state,
+            inputs=[dropdown, radio],
+            outputs=[common_topic_output]
+        )
+        gr.Markdown("---" \
+        "")
+        gr.Markdown("## 🧠 Discover Even More Courses")
+        button2 = gr.Button("Discover", variant="primary")
+        output2 = gr.Dataframe(headers=["Course Name", "Similarity %", "Description"])
+        button2.click(
+            fn=morecourse,
+            inputs=[similar_course_names_output, dropdown, radio, common_topic_output],
+            outputs=output2
+        )
+
 
 demo.title = "UIUC: Find a Similar Course"
 demo.launch(favicon_path='uiuc.png')
-

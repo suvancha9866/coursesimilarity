@@ -13,30 +13,9 @@ def get_common_topic(course_descriptions, course_names):
 
     prompt = f"""Give me a topic that is common amongst all of these course descriptions:
     {context}
+    Only give me the topic. Please do not add any extra words because I want to send the topic as an input for something else. Thank you!!
     """
     
-    try:
-        response = model_gemini.generate_content(prompt)
-        return response.text.strip()
-    except Exception as e:
-        return f"Error calling Gemini API: {e}"
-
-def find_similar_courses_with_gemini(course_descriptions, course_names, df):
-    if not course_descriptions:
-        return "No course descriptions provided."
-    context = "\n".join([f"- {desc} (from {name})" for desc, name in zip(course_descriptions, course_names)])
-    prompt = f"""
-    Given these course descriptions, please find and list other courses from the dataset below that are most similar to them:
-
-    {context}
-
-    --- 
-
-    Here are the available courses in the dataset:
-    {df[['Course', 'Description']].to_string(index=False)}
-    
-    Please return a list of the top 5 courses (with course name and description) that match the provided descriptions the most.
-    """
     try:
         response = model_gemini.generate_content(prompt)
         return response.text.strip()
