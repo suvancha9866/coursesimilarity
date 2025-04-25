@@ -202,6 +202,7 @@ with gr.Blocks(theme = uiuc) as demo:
                     ---
 
                     *Project Description generated with ideas by ChatGPT*
+                    Feedback Form: https://docs.google.com/forms/d/e/1FAIpQLSdgd_CsPrjLDvnufnaFGiQampZYOCnhxZscbMypGYCmqQDsnQ/viewform?usp=dialog
 
         """)
     with gr.Tab("Find Courses with Course Number"):

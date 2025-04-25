@@ -1,8 +1,10 @@
 from models.sbert import SBERT
 from models.roberta import RoBERTa
-from config import GEMINI_API_KEY
+#from config import GEMINI_API_KEY
 import google.generativeai as genai
+import os
 
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 genai.configure(api_key=GEMINI_API_KEY)
 model_gemini = genai.GenerativeModel('gemini-2.0-flash')
 
